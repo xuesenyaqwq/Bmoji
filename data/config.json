@@ -1,0 +1,17 @@
+{
+    "servers": [
+        {
+            "id": "origin",
+            "name": "源站 (Origin)",
+            "baseUrl": "https://i0.hdslb.com",
+            "noReferrer": true
+        },
+        {
+            "id": "ID",
+            "name": "切换列表显示名字",
+            "baseUrl": "https://example.com",
+            "noReferrer": false //是否启用Referrer，B站有防盗链，但允许空白Referrer访问
+        }
+    ]
+}
+

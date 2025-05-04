@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emoji Explorer (Bili Style)</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container doc-layout">
+        <button id="toggle-sidebar-btn" class="toggle-sidebar-btn">☰</button>
+        <aside id="sidebar" class="sidebar">
+            <!-- Removed Sidebar Info Section -->
+            <div class="sidebar-header">
+                <h2 id="sidebar-main-title">Bmoji Explorer</h2>
+                <input type="text" id="search-packages" placeholder="搜索分组...">
+                <select id="server-select"></select>
+            </div>
+            <ul id="package-list" class="package-list">
+                <!-- Package list will be loaded here -->
+            </ul>
+        </aside>
+        <main id="main-content" class="main-content">
+            <h1 id="current-package-title">欢迎使用 Emoji Explorer</h1> <!-- Initial Title -->
+            <!-- Default Welcome Page -->
+            <div id="welcome-page" class="welcome-page">
+                <h2>欢迎！</h2>
+                <p>本网站收录了BiliBili几乎所有表情</p>
+                <p>首次访问需要下载大约15MB表情列表</p>
+                <p>特别感谢：</p>
+                <ul>
+                    <li><a href="https://socialsisteryi.github.io/bilibili-API-collect/docs/emoji/list.html">BAC BiliBili Api</a></li>
+                    <li><a href="https://github.com/lrhtony/BiliEmoji">BiliEmoji</a></li>
+                    <li><a href="https://manus.im/">manus.im</a></li>
+                </ul>
+            </div>
+            <!-- Emoji Display Area (Initially Hidden) -->
+            <div id="emoji-display" class="emoji-display" style="display: none;">
+                <!-- Emojis of the selected package will be loaded here -->
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal for copy options (Reference Image Style) -->
+    <div id="copy-modal" class="modal">
+        <div class="modal-content">
+            <h3 id="modal-emoji-name"></h3>
+            <span class="close-btn modal-close-top">&times;</span>
+            <img id="modal-emoji-img" src="" alt="Emoji Preview">
+
+            <!-- URL Copy Section -->
+            <label class="copy-label" for="copy-url-content">Direct URL:</label>
+            <div class="copy-section new-style">
+                <span class="copy-content-display" id="copy-url-content"></span>
+                <button class="copy-button new-style" id="copy-url-button">Copy</button>
+            </div>
+            <p class="copy-feedback" id="copy-url-feedback"></p>
+
+            <!-- Markdown Copy Section -->
+            <label class="copy-label" for="copy-md-content">Markdown:</label>
+            <div class="copy-section new-style">
+                <span class="copy-content-display" id="copy-md-content"></span>
+                <button class="copy-button new-style" id="copy-md-button">Copy</button>
+            </div>
+            <p class="copy-feedback" id="copy-md-feedback"></p>
+
+            <button class="close-button-bottom" id="modal-close-bottom">Close</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
+
