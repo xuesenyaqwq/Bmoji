@@ -88,6 +88,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let currentEmojiUrl = "";
     let currentEmojiName = "";
     const defaultWelcomeTitle = "欢迎使用 Emoji Explorer"; // Store default title
+    const SERVER_STORAGE_KEY = 'selectedEmojiServerId'; // Key for localStorage
 
     // --- Function to Show Welcome Page ---
     function showWelcomePage() {
@@ -114,11 +115,27 @@ document.addEventListener("DOMContentLoaded", () => {
             emojiData = await emojiRes.json();
 
             populateServerSelect();
-            selectedServer = config.servers.find(s => s.id === "origin") || (config.servers.length > 0 ? config.servers[0] : null);
+
+            // --- Load selected server from localStorage --- START
+            const savedServerId = localStorage.getItem(SERVER_STORAGE_KEY);
+            let initialServerId = "origin"; // Default to origin
+            if (savedServerId && config.servers.some(s => s.id === savedServerId)) {
+                initialServerId = savedServerId;
+            }
+            selectedServer = config.servers.find(s => s.id === initialServerId);
             if (selectedServer) {
                 serverSelect.value = selectedServer.id;
-                updateSelectedServerReferrerPolicy();
+                updateSelectedServerReferrerPolicy(); // Ensure policy is set based on loaded selection
+            } else {
+                 // Fallback if saved ID is invalid or origin doesn't exist (shouldn't happen with default)
+                 selectedServer = config.servers.length > 0 ? config.servers[0] : null;
+                 if (selectedServer) {
+                    serverSelect.value = selectedServer.id;
+                    updateSelectedServerReferrerPolicy();
+                 }
             }
+            // --- Load selected server from localStorage --- END
+
             renderPackageList();
             // Show welcome page initially
             showWelcomePage();
@@ -142,6 +159,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const option = document.createElement("option");
             option.value = server.id;
             option.textContent = server.name;
+            // Store noReferrer policy directly on the option for easier access later
             option.dataset.noReferrer = String(server.noReferrer === true || (server.noReferrer !== false && server.id === 'origin'));
             serverSelect.appendChild(option);
         });
@@ -151,6 +169,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function handleServerChange() {
         updateSelectedServerReferrerPolicy();
+        // --- Save selected server to localStorage --- START
+        if (selectedServer) {
+            localStorage.setItem(SERVER_STORAGE_KEY, selectedServer.id);
+        }
+        // --- Save selected server to localStorage --- END
+
+        // Re-render the package list to update icons
+        renderPackageList(searchPackagesInput.value);
+
+        // Re-render the emoji display if a package is active
         const activePackageItem = packageList.querySelector("li.active");
         if (activePackageItem) {
             const packageId = parseFloat(activePackageItem.dataset.packageId);
@@ -159,19 +187,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 renderEmojiDisplay(selectedPackage);
             }
         } else {
-            // If no package is active after server change, potentially show welcome?
-            // Or just re-render list which might clear emojis if active package is gone?
-            // Current behavior: only re-renders if a package *was* active.
-            // Let's keep it simple for now.
+             // If no package is active, ensure welcome page isn't shown over potentially stale emoji display
+             // showWelcomePage(); // Or simply do nothing if welcome is already shown
         }
-        renderPackageList(searchPackagesInput.value);
     }
 
     function updateSelectedServerReferrerPolicy() {
         const selectedOption = serverSelect.options[serverSelect.selectedIndex];
         const serverId = selectedOption.value;
         selectedServer = config.servers.find(s => s.id === serverId);
-        if (selectedServer) {
+        // Update the noReferrer status based on the selected option's data attribute
+        if (selectedServer && selectedOption) {
             selectedServer.noReferrer = selectedOption.dataset.noReferrer === 'true';
         }
     }
@@ -179,12 +205,15 @@ document.addEventListener("DOMContentLoaded", () => {
     // --- URL Helper ---
     function getFullUrl(url) {
         if (!selectedServer || !url) return "";
+        // If URL is already absolute, return it directly
         if (url.startsWith('http://') || url.startsWith('https://')) {
             return url;
         }
+        // If URL contains {baseURL} placeholder, replace it
         if (url.includes("{baseURL}")) {
             return url.replace("{baseURL}", selectedServer.baseUrl);
         } else {
+            // Otherwise, construct the full URL by joining baseUrl and relative url
             const baseUrl = selectedServer.baseUrl.endsWith('/') ? selectedServer.baseUrl.slice(0, -1) : selectedServer.baseUrl;
             const relativeUrl = url.startsWith('/') ? url.slice(1) : url;
             return `${baseUrl}/${relativeUrl}`;
@@ -200,7 +229,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         emojiData.packages.forEach(pkg => {
             if (!searchTerm || pkg.text.toLowerCase().includes(lowerSearchTerm)) {
-                const iconSrc = getFullUrl(pkg.icon);
+                const iconSrc = getFullUrl(pkg.icon); // Get full URL based on current selectedServer
                 const referrerPolicyAttr = (selectedServer && selectedServer.noReferrer) ? 'referrerpolicy="no-referrer"' : '';
                 const isActive = String(pkg.id) === activePackageIdStr;
                 listHTML += `
@@ -212,7 +241,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         });
         packageList.innerHTML = listHTML || "<li>无匹配分组</li>";
-        addPackageListListeners();
+        addPackageListListeners(); // Re-attach listeners after updating innerHTML
     }
 
     function addPackageListListeners() {
@@ -228,6 +257,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const selectedPackage = emojiData.packages.find(pkg => pkg.id === packageId);
                 if (selectedPackage) {
                     renderEmojiDisplay(selectedPackage);
+                    // Close sidebar on mobile after selection
                     if (window.innerWidth <= 768) {
                         sidebar.classList.remove('open');
                         document.body.classList.remove('sidebar-open');
@@ -245,21 +275,22 @@ document.addEventListener("DOMContentLoaded", () => {
         emojiDisplay.style.display = 'flex'; // Use 'flex' as defined in CSS
 
         currentPackageTitle.textContent = pkg.text;
-        emojiDisplay.innerHTML = ""; // Clear previous emojis
+        emojiDisplay.innerHTML = ""; // Clear previous emojis - this forces re-creation
 
         pkg.emojis.forEach(emoji => {
             const emojiItem = document.createElement("div");
             emojiItem.className = "emoji-item";
             emojiItem.dataset.emojiName = emoji.name;
-            emojiItem.dataset.emojiUrl = emoji.url;
+            emojiItem.dataset.emojiUrl = emoji.url; // Store original relative/placeholder URL
 
             const img = document.createElement("img");
-            img.dataset.src = getFullUrl(emoji.url);
+            const fullUrl = getFullUrl(emoji.url); // Get full URL based on current selectedServer
+            img.dataset.src = fullUrl; // Set dataset for lazy loading
             img.alt = emoji.name;
             if (selectedServer && selectedServer.noReferrer) {
                 img.referrerPolicy = "no-referrer";
             } else {
-                img.referrerPolicy = "";
+                img.referrerPolicy = ""; // Reset policy if not needed
             }
 
             const nameSpan = document.createElement("span");
@@ -277,6 +308,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 openCopyModal(emoji.name, emoji.url);
             });
 
+            // Observe the image for lazy loading
             observer.observe(img);
         });
     }
@@ -291,13 +323,17 @@ document.addEventListener("DOMContentLoaded", () => {
         entries.forEach(entry => {
             if (entry.isIntersecting) {
                 const img = entry.target;
-                img.src = img.dataset.src;
-                img.onload = () => observer.unobserve(img);
+                // Only set src if it's not already set or if it differs from dataset.src (optional check)
+                if (!img.src || img.src !== img.dataset.src) {
+                    img.src = img.dataset.src;
+                }
+                // No need to unobserve immediately on load, let it handle potential re-intersections if needed
+                // img.onload = () => observer.unobserve(img); // Removed this line
                 img.onerror = () => {
                     console.error(`Failed to load image: ${img.dataset.src}`);
                     img.alt = `Error: ${img.alt}`;
                     img.style.backgroundColor = '#ffdddd';
-                    observer.unobserve(img);
+                    observer.unobserve(img); // Unobserve on error
                 };
             }
         });
@@ -308,12 +344,14 @@ document.addEventListener("DOMContentLoaded", () => {
         sidebar.classList.toggle("open");
         document.body.classList.toggle('sidebar-open');
     });
+    // Close sidebar when clicking on main content area
     mainContent.addEventListener("click", () => {
         if (window.innerWidth <= 768 && sidebar.classList.contains("open")) {
             sidebar.classList.remove("open");
             document.body.classList.remove('sidebar-open');
         }
     });
+    // Close sidebar when clicking outside of it on mobile
     document.body.addEventListener('click', (event) => {
          if (window.innerWidth <= 768 && sidebar.classList.contains('open') && !sidebar.contains(event.target) && event.target !== toggleSidebarBtn) {
             sidebar.classList.remove('open');
@@ -327,10 +365,10 @@ document.addEventListener("DOMContentLoaded", () => {
         sidebarMainTitle.addEventListener('click', showWelcomePage);
     }
 
-    // --- Copy Modal Logic (Fixed replaceChild Error) ---
+    // --- Copy Modal Logic ---
     function openCopyModal(name, originalUrl) {
         currentEmojiName = name;
-        currentEmojiUrl = getFullUrl(originalUrl);
+        currentEmojiUrl = getFullUrl(originalUrl); // Use originalUrl to construct current full URL
         const markdownText = `![${currentEmojiName}](${currentEmojiUrl})`;
 
         // Update modal content
@@ -343,10 +381,11 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         urlCopyContent.textContent = currentEmojiUrl;
         mdCopyContent.textContent = markdownText;
-        urlCopyFeedback.textContent = "";
-        mdCopyFeedback.textContent = "";
+        urlCopyFeedback.textContent = ""; // Clear feedback
+        mdCopyFeedback.textContent = ""; // Clear feedback
 
-        // Re-query buttons inside the function to get current nodes
+        // --- Dynamic Button Listeners (Clone & Replace Method) ---
+        // Re-query buttons inside the function to ensure we have the latest nodes
         const currentUrlCopyButton = copyModal.querySelector("#copy-url-button");
         const currentMdCopyButton = copyModal.querySelector("#copy-md-button");
 
@@ -367,25 +406,27 @@ document.addEventListener("DOMContentLoaded", () => {
         } else {
             console.error("Could not find Markdown copy button or its parent.");
         }
+        // --- End Dynamic Button Listeners ---
 
-        copyModal.style.display = "flex";
+        // Show the modal
+        copyModal.style.display = "block";
     }
 
-    function closeCopyModal() {
-        copyModal.style.display = "none";
+    // Close modal listeners
+    if (modalCloseTopBtn) {
+        modalCloseTopBtn.addEventListener("click", () => copyModal.style.display = "none");
     }
-
-    // Add listeners for new close buttons
-    modalCloseTopBtn.addEventListener("click", closeCopyModal);
-    modalCloseBottomBtn.addEventListener("click", closeCopyModal);
-    // Close modal if clicking outside the content
-    copyModal.addEventListener("click", (event) => {
+    if (modalCloseBottomBtn) {
+        modalCloseBottomBtn.addEventListener("click", () => copyModal.style.display = "none");
+    }
+    // Close modal if clicking outside of it
+    window.addEventListener("click", (event) => {
         if (event.target === copyModal) {
-            closeCopyModal();
+            copyModal.style.display = "none";
         }
     });
 
-    // --- Initial Load ---
+    // --- Initial Data Load ---
     fetchData();
 });
 
