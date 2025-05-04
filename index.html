@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Emoji Explorer (Bili Style)</title>
+    <title>Bmoji Explorer</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -21,13 +21,21 @@
             </ul>
         </aside>
         <main id="main-content" class="main-content">
-            <h1 id="current-package-title">欢迎使用 Emoji Explorer</h1> <!-- Initial Title -->
+            <h1 id="current-package-title">欢迎使用 Bmoji Explorer</h1> <!-- Initial Title -->
             <!-- Default Welcome Page -->
             <div id="welcome-page" class="welcome-page">
                 <h2>欢迎！</h2>
                 <p>本网站收录了BiliBili几乎所有表情</p>
                 <p>首次访问需要下载大约15MB表情列表</p>
-                <p>Github:<a href="https://github.com/xuesenyaqwq/Bmoji" target="_blank">Bmoji</a></p>
+                <!-- Loading Progress Bar START -->
+                <div id="loading-progress" style="display: none; margin-top: 20px;">
+                    <p>正在加载表情数据...</p>
+                    <progress id="progress-bar" value="0" max="100" style="width: 100%;"></progress>
+                    <p><span id="progress-percent">0</span>% (<span id="progress-loaded">0</span> / <span id="progress-total">0</span> MB)</p>
+                    <p>速度: <span id="progress-speed">0</span> KB/s</p>
+                </div>
+                <!-- Loading Progress Bar END -->
+                <p style="margin-top: 20px;">本网站基于 <a href="https://github.com/xuesenyaqwq/Bmoji" target="_blank">Bmoji</a></p>
                 <p>特别感谢：</p>
                 <ul>
                     <li><a href="https://socialsisteryi.github.io/bilibili-API-collect/docs/emoji/list.html" target="_blank">BAC BiliBili Api</a></li>

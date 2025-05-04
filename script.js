@@ -68,7 +68,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const toggleSidebarBtn = document.getElementById("toggle-sidebar-btn");
     const mainContent = document.getElementById("main-content");
     const welcomePage = document.getElementById("welcome-page");
-    const sidebarMainTitle = document.getElementById("sidebar-main-title"); // Added sidebar title reference
+    const sidebarMainTitle = document.getElementById("sidebar-main-title");
 
     // Copy Modal Elements
     const copyModal = document.getElementById("copy-modal");
@@ -81,104 +81,196 @@ document.addEventListener("DOMContentLoaded", () => {
     const mdCopyContent = copyModal.querySelector("#copy-md-content");
     const mdCopyFeedback = copyModal.querySelector("#copy-md-feedback");
 
+    // Loading Progress Elements
+    const loadingProgressDiv = document.getElementById("loading-progress");
+    const progressBar = document.getElementById("progress-bar");
+    const progressPercent = document.getElementById("progress-percent");
+    const progressLoaded = document.getElementById("progress-loaded");
+    const progressTotal = document.getElementById("progress-total");
+    const progressSpeed = document.getElementById("progress-speed");
+
     // State Variables
     let emojiData = { packages: [] };
     let config = { servers: [] };
     let selectedServer = null;
     let currentEmojiUrl = "";
     let currentEmojiName = "";
-    const defaultWelcomeTitle = "欢迎使用 Emoji Explorer"; // Store default title
-    const SERVER_STORAGE_KEY = 'selectedEmojiServerId'; // Key for localStorage
+    const defaultWelcomeTitle = "欢迎使用 Emoji Explorer";
+    const SERVER_STORAGE_KEY = 'selectedEmojiServerId';
 
     // --- Function to Show Welcome Page ---
     function showWelcomePage() {
         if (welcomePage) welcomePage.style.display = 'block';
         if (emojiDisplay) emojiDisplay.style.display = 'none';
         if (currentPackageTitle) currentPackageTitle.textContent = defaultWelcomeTitle;
-        // Remove active class from any selected package
         const currentActive = packageList.querySelector("li.active");
         if (currentActive) {
             currentActive.classList.remove("active");
         }
     }
 
-    // --- Data Fetching ---
+    // --- Data Fetching with Progress --- START
+    async function fetchDataWithProgress(url, onProgress) {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const contentLength = +response.headers.get('Content-Length');
+        let receivedLength = 0;
+        let chunks = [];
+        let startTime = Date.now();
+        let lastUpdateTime = startTime;
+        let lastLoadedBytes = 0;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+                break;
+            }
+            chunks.push(value);
+            receivedLength += value.length;
+
+            const currentTime = Date.now();
+            const timeSinceLastUpdate = (currentTime - lastUpdateTime) / 1000;
+
+            let speed = 0;
+            // Update speed calculation more frequently for better responsiveness
+            if (timeSinceLastUpdate > 0.1) { // Update roughly every 100ms
+                const bytesSinceLastUpdate = receivedLength - lastLoadedBytes;
+                speed = bytesSinceLastUpdate / timeSinceLastUpdate / 1024; // KB/s
+                lastUpdateTime = currentTime;
+                lastLoadedBytes = receivedLength;
+                 // Call onProgress within the speed update block to ensure speed is current
+                 if (onProgress) {
+                    onProgress(receivedLength, contentLength, speed);
+                }
+            } else if (onProgress) {
+                 // Still call onProgress for percentage updates even if speed isn't recalculated yet
+                 const currentSpeed = (receivedLength - lastLoadedBytes) / ((currentTime - lastUpdateTime)/1000) / 1024;
+                 onProgress(receivedLength, contentLength, currentSpeed > 0 ? currentSpeed : speed); // Use last calculated speed if interval too short
+            }
+        }
+
+        // Ensure final progress update is sent
+        if (onProgress) {
+             const finalSpeed = (receivedLength - lastLoadedBytes) / ((Date.now() - lastUpdateTime)/1000) / 1024;
+             onProgress(receivedLength, contentLength, finalSpeed > 0 ? finalSpeed : 0);
+        }
+
+        let chunksAll = new Uint8Array(receivedLength);
+        let position = 0;
+        for (let chunk of chunks) {
+            chunksAll.set(chunk, position);
+            position += chunk.length;
+        }
+
+        const result = new TextDecoder("utf-8").decode(chunksAll);
+        return JSON.parse(result);
+    }
+
     async function fetchData() {
         try {
-            const [configRes, emojiRes] = await Promise.all([
-                fetch("data/config.json"),
-                fetch("data/emoji_data.json")
-            ]);
+            // Fetch config normally
+            const configRes = await fetch("data/config.json");
             if (!configRes.ok) throw new Error(`HTTP error! status: ${configRes.status}`);
             config = await configRes.json();
-            if (!emojiRes.ok) throw new Error(`HTTP error! status: ${emojiRes.status}`);
-            emojiData = await emojiRes.json();
 
+            // Show progress bar before fetching large emoji data
+            if (loadingProgressDiv) loadingProgressDiv.style.display = 'block';
+
+            // Fetch emoji data with progress
+            emojiData = await fetchDataWithProgress("data/emoji_data.json", (loaded, total, speed) => {
+                if (progressBar && progressPercent && progressLoaded && progressTotal && progressSpeed) {
+                    const percent = total ? Math.round((loaded / total) * 100) : 0;
+                    progressBar.value = percent;
+                    progressPercent.textContent = percent;
+                    progressLoaded.textContent = (loaded / 1024 / 1024).toFixed(2);
+                    // Display total in MB, handle case where total is unknown
+                    progressTotal.textContent = total ? (total / 1024 / 1024).toFixed(2) : '??';
+                    progressSpeed.textContent = speed > 0 ? speed.toFixed(1) : '0.0'; // Ensure speed is non-negative
+                }
+            });
+
+            // Hide progress bar after successful load
+            if (loadingProgressDiv) loadingProgressDiv.style.display = 'none';
+
+            // --- Initialize UI after data is loaded ---
             populateServerSelect();
 
-            // --- Load selected server from localStorage --- START
             const savedServerId = localStorage.getItem(SERVER_STORAGE_KEY);
-            let initialServerId = "origin"; // Default to origin
-            if (savedServerId && config.servers.some(s => s.id === savedServerId)) {
-                initialServerId = savedServerId;
-            }
-            selectedServer = config.servers.find(s => s.id === initialServerId);
-            if (selectedServer) {
-                serverSelect.value = selectedServer.id;
-                updateSelectedServerReferrerPolicy(); // Ensure policy is set based on loaded selection
-            } else {
-                 // Fallback if saved ID is invalid or origin doesn't exist (shouldn't happen with default)
-                 selectedServer = config.servers.length > 0 ? config.servers[0] : null;
-                 if (selectedServer) {
+            let initialServerId = "origin";
+            // Ensure config.servers exists and is an array before using .some and .find
+            if (config.servers && Array.isArray(config.servers)) {
+                if (savedServerId && config.servers.some(s => s.id === savedServerId)) {
+                    initialServerId = savedServerId;
+                }
+                selectedServer = config.servers.find(s => s.id === initialServerId);
+                if (selectedServer) {
                     serverSelect.value = selectedServer.id;
                     updateSelectedServerReferrerPolicy();
-                 }
+                } else {
+                    // Fallback if saved ID is invalid or origin doesn't exist
+                    selectedServer = config.servers.length > 0 ? config.servers[0] : null;
+                    if (selectedServer) {
+                        serverSelect.value = selectedServer.id;
+                        updateSelectedServerReferrerPolicy();
+                    }
+                }
+            } else {
+                console.error("Config servers data is missing or invalid.");
+                // Handle missing server config gracefully, maybe show an error
+                selectedServer = null; // Ensure selectedServer is null
+                serverSelect.innerHTML = '<option>服务器加载失败</option>';
             }
-            // --- Load selected server from localStorage --- END
 
             renderPackageList();
-            // Show welcome page initially
-            showWelcomePage();
+            showWelcomePage(); // Show welcome page initially
+
         } catch (error) {
             console.error("Error fetching data:", error);
+            // Hide progress bar on error
+            if (loadingProgressDiv) loadingProgressDiv.style.display = 'none';
             packageList.innerHTML = "<li>加载分组失败</li>";
             if (welcomePage) {
-                 welcomePage.innerHTML = "<h2>加载数据失败</h2><p>请检查网络连接或配置文件。</p>";
-                 welcomePage.style.display = 'block'; // Ensure welcome page is visible on error
+                 welcomePage.innerHTML = `<h2>加载数据失败</h2><p>错误: ${error.message}</p><p>请检查网络连接或文件路径是否正确。</p>`;
+                 welcomePage.style.display = 'block';
             }
             if (emojiDisplay) emojiDisplay.style.display = 'none';
             if (currentPackageTitle) currentPackageTitle.textContent = "加载失败";
         }
     }
+    // --- Data Fetching with Progress --- END
 
     // --- Server Selection --- 
     function populateServerSelect() {
-        if (!config || !config.servers) return;
+        // Ensure config.servers exists and is an array
+        if (!config || !config.servers || !Array.isArray(config.servers)) {
+             serverSelect.innerHTML = '<option>无可用服务器</option>';
+             return;
+        }
         serverSelect.innerHTML = "";
         config.servers.forEach(server => {
             const option = document.createElement("option");
             option.value = server.id;
             option.textContent = server.name;
-            // Store noReferrer policy directly on the option for easier access later
             option.dataset.noReferrer = String(server.noReferrer === true || (server.noReferrer !== false && server.id === 'origin'));
             serverSelect.appendChild(option);
         });
-        serverSelect.removeEventListener("change", handleServerChange);
-        serverSelect.addEventListener("change", handleServerChange);
+        // Only add listener if there are servers to select
+        if (config.servers.length > 0) {
+            serverSelect.removeEventListener("change", handleServerChange);
+            serverSelect.addEventListener("change", handleServerChange);
+        }
     }
 
     function handleServerChange() {
         updateSelectedServerReferrerPolicy();
-        // --- Save selected server to localStorage --- START
         if (selectedServer) {
             localStorage.setItem(SERVER_STORAGE_KEY, selectedServer.id);
         }
-        // --- Save selected server to localStorage --- END
-
-        // Re-render the package list to update icons
         renderPackageList(searchPackagesInput.value);
-
-        // Re-render the emoji display if a package is active
         const activePackageItem = packageList.querySelector("li.active");
         if (activePackageItem) {
             const packageId = parseFloat(activePackageItem.dataset.packageId);
@@ -186,34 +278,34 @@ document.addEventListener("DOMContentLoaded", () => {
             if (selectedPackage) {
                 renderEmojiDisplay(selectedPackage);
             }
-        } else {
-             // If no package is active, ensure welcome page isn't shown over potentially stale emoji display
-             // showWelcomePage(); // Or simply do nothing if welcome is already shown
         }
     }
 
     function updateSelectedServerReferrerPolicy() {
         const selectedOption = serverSelect.options[serverSelect.selectedIndex];
+        // Ensure selectedOption exists before accessing its properties
+        if (!selectedOption) return;
         const serverId = selectedOption.value;
-        selectedServer = config.servers.find(s => s.id === serverId);
-        // Update the noReferrer status based on the selected option's data attribute
-        if (selectedServer && selectedOption) {
-            selectedServer.noReferrer = selectedOption.dataset.noReferrer === 'true';
+        // Ensure config.servers exists and is an array
+        if (config.servers && Array.isArray(config.servers)) {
+             selectedServer = config.servers.find(s => s.id === serverId);
+             if (selectedServer) {
+                 selectedServer.noReferrer = selectedOption.dataset.noReferrer === 'true';
+             }
+        } else {
+            selectedServer = null; // Reset if server config is invalid
         }
     }
 
     // --- URL Helper ---
     function getFullUrl(url) {
         if (!selectedServer || !url) return "";
-        // If URL is already absolute, return it directly
         if (url.startsWith('http://') || url.startsWith('https://')) {
             return url;
         }
-        // If URL contains {baseURL} placeholder, replace it
         if (url.includes("{baseURL}")) {
             return url.replace("{baseURL}", selectedServer.baseUrl);
         } else {
-            // Otherwise, construct the full URL by joining baseUrl and relative url
             const baseUrl = selectedServer.baseUrl.endsWith('/') ? selectedServer.baseUrl.slice(0, -1) : selectedServer.baseUrl;
             const relativeUrl = url.startsWith('/') ? url.slice(1) : url;
             return `${baseUrl}/${relativeUrl}`;
@@ -229,7 +321,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         emojiData.packages.forEach(pkg => {
             if (!searchTerm || pkg.text.toLowerCase().includes(lowerSearchTerm)) {
-                const iconSrc = getFullUrl(pkg.icon); // Get full URL based on current selectedServer
+                const iconSrc = getFullUrl(pkg.icon);
                 const referrerPolicyAttr = (selectedServer && selectedServer.noReferrer) ? 'referrerpolicy="no-referrer"' : '';
                 const isActive = String(pkg.id) === activePackageIdStr;
                 listHTML += `
@@ -241,7 +333,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         });
         packageList.innerHTML = listHTML || "<li>无匹配分组</li>";
-        addPackageListListeners(); // Re-attach listeners after updating innerHTML
+        addPackageListListeners();
     }
 
     function addPackageListListeners() {
@@ -257,7 +349,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 const selectedPackage = emojiData.packages.find(pkg => pkg.id === packageId);
                 if (selectedPackage) {
                     renderEmojiDisplay(selectedPackage);
-                    // Close sidebar on mobile after selection
                     if (window.innerWidth <= 768) {
                         sidebar.classList.remove('open');
                         document.body.classList.remove('sidebar-open');
@@ -269,28 +360,25 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function renderEmojiDisplay(pkg) {
         if (!emojiDisplay || !pkg || !welcomePage) return;
-
-        // Hide welcome page and show emoji display
         welcomePage.style.display = 'none';
-        emojiDisplay.style.display = 'flex'; // Use 'flex' as defined in CSS
-
+        emojiDisplay.style.display = 'flex';
         currentPackageTitle.textContent = pkg.text;
-        emojiDisplay.innerHTML = ""; // Clear previous emojis - this forces re-creation
+        emojiDisplay.innerHTML = "";
 
         pkg.emojis.forEach(emoji => {
             const emojiItem = document.createElement("div");
             emojiItem.className = "emoji-item";
             emojiItem.dataset.emojiName = emoji.name;
-            emojiItem.dataset.emojiUrl = emoji.url; // Store original relative/placeholder URL
+            emojiItem.dataset.emojiUrl = emoji.url;
 
             const img = document.createElement("img");
-            const fullUrl = getFullUrl(emoji.url); // Get full URL based on current selectedServer
-            img.dataset.src = fullUrl; // Set dataset for lazy loading
+            const fullUrl = getFullUrl(emoji.url);
+            img.dataset.src = fullUrl;
             img.alt = emoji.name;
             if (selectedServer && selectedServer.noReferrer) {
                 img.referrerPolicy = "no-referrer";
             } else {
-                img.referrerPolicy = ""; // Reset policy if not needed
+                img.referrerPolicy = "";
             }
 
             const nameSpan = document.createElement("span");
@@ -300,15 +388,12 @@ document.addEventListener("DOMContentLoaded", () => {
             emojiItem.appendChild(nameSpan);
             emojiDisplay.appendChild(emojiItem);
 
-            // Add click listener to the whole item
             emojiItem.addEventListener("click", () => openCopyModal(emoji.name, emoji.url));
-            // Add click listener specifically to the image
             img.addEventListener("click", (event) => {
-                event.stopPropagation(); // Prevent triggering the emojiItem listener twice
+                event.stopPropagation();
                 openCopyModal(emoji.name, emoji.url);
             });
 
-            // Observe the image for lazy loading
             observer.observe(img);
         });
     }
@@ -323,17 +408,14 @@ document.addEventListener("DOMContentLoaded", () => {
         entries.forEach(entry => {
             if (entry.isIntersecting) {
                 const img = entry.target;
-                // Only set src if it's not already set or if it differs from dataset.src (optional check)
                 if (!img.src || img.src !== img.dataset.src) {
                     img.src = img.dataset.src;
                 }
-                // No need to unobserve immediately on load, let it handle potential re-intersections if needed
-                // img.onload = () => observer.unobserve(img); // Removed this line
                 img.onerror = () => {
                     console.error(`Failed to load image: ${img.dataset.src}`);
                     img.alt = `Error: ${img.alt}`;
                     img.style.backgroundColor = '#ffdddd';
-                    observer.unobserve(img); // Unobserve on error
+                    observer.unobserve(img);
                 };
             }
         });
@@ -344,14 +426,12 @@ document.addEventListener("DOMContentLoaded", () => {
         sidebar.classList.toggle("open");
         document.body.classList.toggle('sidebar-open');
     });
-    // Close sidebar when clicking on main content area
     mainContent.addEventListener("click", () => {
         if (window.innerWidth <= 768 && sidebar.classList.contains("open")) {
             sidebar.classList.remove("open");
             document.body.classList.remove('sidebar-open');
         }
     });
-    // Close sidebar when clicking outside of it on mobile
     document.body.addEventListener('click', (event) => {
          if (window.innerWidth <= 768 && sidebar.classList.contains('open') && !sidebar.contains(event.target) && event.target !== toggleSidebarBtn) {
             sidebar.classList.remove('open');
@@ -361,17 +441,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // --- Sidebar Title Click to Welcome ---
     if (sidebarMainTitle) {
-        sidebarMainTitle.style.cursor = 'pointer'; // Add pointer cursor
+        sidebarMainTitle.style.cursor = 'pointer';
         sidebarMainTitle.addEventListener('click', showWelcomePage);
     }
 
     // --- Copy Modal Logic ---
     function openCopyModal(name, originalUrl) {
         currentEmojiName = name;
-        currentEmojiUrl = getFullUrl(originalUrl); // Use originalUrl to construct current full URL
+        currentEmojiUrl = getFullUrl(originalUrl);
         const markdownText = `![${currentEmojiName}](${currentEmojiUrl})`;
 
-        // Update modal content
         modalEmojiName.textContent = currentEmojiName;
         modalEmojiImg.src = currentEmojiUrl;
         if (selectedServer && selectedServer.noReferrer) {
@@ -381,15 +460,12 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         urlCopyContent.textContent = currentEmojiUrl;
         mdCopyContent.textContent = markdownText;
-        urlCopyFeedback.textContent = ""; // Clear feedback
-        mdCopyFeedback.textContent = ""; // Clear feedback
+        urlCopyFeedback.textContent = "";
+        mdCopyFeedback.textContent = "";
 
-        // --- Dynamic Button Listeners (Clone & Replace Method) ---
-        // Re-query buttons inside the function to ensure we have the latest nodes
         const currentUrlCopyButton = copyModal.querySelector("#copy-url-button");
         const currentMdCopyButton = copyModal.querySelector("#copy-md-button");
 
-        // Clone, replace, and add listener for URL button
         if (currentUrlCopyButton && currentUrlCopyButton.parentNode) {
             const newUrlCopyButton = currentUrlCopyButton.cloneNode(true);
             currentUrlCopyButton.parentNode.replaceChild(newUrlCopyButton, currentUrlCopyButton);
@@ -398,7 +474,6 @@ document.addEventListener("DOMContentLoaded", () => {
             console.error("Could not find URL copy button or its parent.");
         }
 
-        // Clone, replace, and add listener for Markdown button
         if (currentMdCopyButton && currentMdCopyButton.parentNode) {
             const newMdCopyButton = currentMdCopyButton.cloneNode(true);
             currentMdCopyButton.parentNode.replaceChild(newMdCopyButton, currentMdCopyButton);
@@ -406,9 +481,7 @@ document.addEventListener("DOMContentLoaded", () => {
         } else {
             console.error("Could not find Markdown copy button or its parent.");
         }
-        // --- End Dynamic Button Listeners ---
 
-        // Show the modal
         copyModal.style.display = "block";
     }
 
@@ -419,7 +492,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (modalCloseBottomBtn) {
         modalCloseBottomBtn.addEventListener("click", () => copyModal.style.display = "none");
     }
-    // Close modal if clicking outside of it
     window.addEventListener("click", (event) => {
         if (event.target === copyModal) {
             copyModal.style.display = "none";
