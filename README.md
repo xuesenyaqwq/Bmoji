@@ -1,4 +1,4 @@
-![loli](https://loli.sakurasen.cn/@sakurasen.cn?name=sakurasen.cn&theme=gelbooru&padding=8&offset=0&align=top&scale=1&pixelated=1&darkmode=auto)
+![loli](https://count.getloli.com/@Bmoji?name=Bmoji&theme=gelbooru&padding=7&offset=0&align=top&scale=1&pixelated=1&darkmode=auto)
 
 本仓库所有内容都基于 manus.im 生成
 
