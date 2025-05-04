@@ -10,7 +10,7 @@
 2. 安装依赖库: pip install requests
 3. 运行脚本: python bilibili_emoji_scraper_auto.py
 4. 脚本运行时会提示您输入 Bilibili 账户的 SESSDATA 值。
-   - 获取 SESSDATA: 登录 Bilibili 网页版，打开浏览器开发者工具 (通常按 F12)，切换到 "Application" (或 "存储") 标签页，在左侧找到 "Cookies" -> "https://www.bilibili.com"，找到名为 "SESSDATA" 的 Cookie，复制其值。
+   - 获取 SESSDATA: 登录 Bilibili 网页版，打开浏览器开发者工具 (通常按 F12)，切换到 "Application" (或 "存储") 标签页，在左侧找到 "Cookies" -> " https://www.bilibili.com "，找到名为 "SESSDATA" 的 Cookie，复制其值。
    - **警告: SESSDATA 是您的登录凭证，请勿泄露给他人！**
 5. 合并后的完整数据将保存在 'bilibili_emoji_complete_data.json' (或修改脚本中的 FINAL_OUTPUT_FILE 变量) 文件中。
 
